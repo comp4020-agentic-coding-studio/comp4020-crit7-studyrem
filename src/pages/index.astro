@@ -221,7 +221,11 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
           <ul>
             {completed.map((entry) => (
               <li>
-                {entry.course.code} — {entry.course.title}
+                {entry.course.code} — {entry.course.title}{" "}
+                <form method="post" action="/api/plan/remove" class="inline">
+                  <input type="hidden" name="entryId" value={entry.id} />
+                  <button>Undo</button>
+                </form>
               </li>
             ))}
           </ul>
