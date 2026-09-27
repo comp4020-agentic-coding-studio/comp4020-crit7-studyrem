@@ -22,16 +22,21 @@ export function semesterAt(slot: number): { year: number; semester: Semester } {
   return { year: Math.floor(slot / 2) + 1, semester: slot % 2 === 0 ? "S1" : "S2" };
 }
 
+export const PLANNING_YEARS = [1, 2, 3, 4];
+export const SEMESTERS: Semester[] = ["S1", "S2"];
+
 /** Parses the "<year>-<semester>" value used by the year/semester <select>s
- * on the plan and add-course forms, e.g. "2-S1". */
+ * on the plan and add-course forms, e.g. "2-S1". Rejects a year outside
+ * PLANNING_YEARS — the <select>s never offer one, so this only matters
+ * against a raw request, but an out-of-range year otherwise corrupts the
+ * "current position" selector and the timeline's past/future styling. */
 export function parseSlotValue(value: string): { year: number; semester: Semester } | null {
   const match = /^(\d+)-(S1|S2)$/.exec(value);
   if (!match) return null;
-  return { year: Number(match[1]), semester: match[2] as Semester };
+  const year = Number(match[1]);
+  if (!PLANNING_YEARS.includes(year)) return null;
+  return { year, semester: match[2] as Semester };
 }
-
-export const PLANNING_YEARS = [1, 2, 3, 4];
-export const SEMESTERS: Semester[] = ["S1", "S2"];
 
 /** A normal semester's course load — the number of fixed columns a plan row
  * shows before a placement counts as "overflowing" it. */
