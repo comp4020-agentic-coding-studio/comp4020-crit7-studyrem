@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
+  altPreferences,
   type Course,
   courses,
   type PlanEntry,
@@ -285,4 +286,19 @@ export function setPlanSettings(year: number, semester: "S1" | "S2"): PlanSettin
     .where(eq(planSettings.id, 1))
     .returning()
     .get();
+}
+
+export function getAltPreference(optionsKey: string): number | undefined {
+  return db
+    .select()
+    .from(altPreferences)
+    .where(eq(altPreferences.optionsKey, optionsKey))
+    .get()?.preferredCourseId;
+}
+
+export function setAltPreference(optionsKey: string, preferredCourseId: number): void {
+  db.insert(altPreferences)
+    .values({ optionsKey, preferredCourseId })
+    .onConflictDoUpdate({ target: altPreferences.optionsKey, set: { preferredCourseId } })
+    .run();
 }

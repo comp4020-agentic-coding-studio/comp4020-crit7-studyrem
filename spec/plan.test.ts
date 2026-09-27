@@ -28,6 +28,14 @@ async function entryIdFor(html: string, code: string): Promise<string> {
   return match[1];
 }
 
+// Once more than one auto-placed entry has an Alter control on the page, the
+// first "fromCourseId" in the HTML isn't necessarily the one for the course
+// you care about — this anchors the search to that course's own code, the
+// same way entryIdFor anchors to "entryId".
+function fromCourseIdFor(html: string, code: string): string | undefined {
+  return new RegExp(`${code}[\\s\\S]{0,800}?name="fromCourseId" value="(\\d+)"`).exec(html)?.[1];
+}
+
 // The course picker keeps listing every *unplanned* course by code, so a
 // bare substring check can't tell "removed from the plan" apart from
 // "back in the add-a-course dropdown". A course actually placed on the grid
@@ -90,7 +98,7 @@ describe("plan", () => {
     expect(isPlanned(after, "COMP1100")).toBe(true);
   });
 
-  it("alters an auto-placed prerequisite to its OR-alternative", async () => {
+  it("alters an auto-placed prerequisite to its OR-alternative, staying auto", async () => {
     // COMP2100 -> (COMP1110 or COMP1140). COMP1100 is pinned at 1-S1
     // (earlier test), which already satisfies COMP1110's own prerequisite,
     // so adding COMP2100 at 2-S1 only auto-places COMP1110 — that's the
@@ -100,7 +108,7 @@ describe("plan", () => {
 
     let html = await (await fetch(baseUrl)).text();
     expect(html).toMatch(/COMP1110[\s\S]{0,200}?auto/);
-    const fromCourseId = new RegExp('name="fromCourseId" value="(\\d+)"').exec(html)?.[1];
+    const fromCourseId = fromCourseIdFor(html, "COMP1110");
     if (!fromCourseId) throw new Error("no Alter control found for the auto-placed COMP1110");
     const comp1140Id = await courseIdFor("COMP1140");
 
@@ -112,16 +120,33 @@ describe("plan", () => {
     expect(res.headers.get("location")).toBe("/");
 
     html = await (await fetch(baseUrl)).text();
-    expect(html).toMatch(/COMP1140[\s\S]{0,200}?pinned/);
+    // Stays an auto entry — it's still an auto-fill choice, just a
+    // different one, not something the user pinned as a root. COMP1140 has
+    // its own prerequisite (COMP1130, not shared with COMP1110's), so it
+    // also auto-unfolds now.
+    expect(html).toMatch(/COMP1140[\s\S]{0,200}?auto/);
+    expect(html).toMatch(/COMP1130[\s\S]{0,200}?auto/);
     expect(isPlanned(html, "COMP1110")).toBe(false);
 
-    // Cleanup so later tests see the branch empty again — COMP1140 is now a
-    // pinned root of its own, so it needs removing separately from COMP2100.
+    // Alter records a *standing* preference for this alternative set, so it
+    // would keep picking COMP1140 in later tests too — alter back to
+    // COMP1110 before removing COMP2100, so later tests see the original
+    // default and COMP1110 (and COMP1130 behind it) gets garbage-collected
+    // with the root (all auto, so no separate removal call is needed).
+    const comp1140FromCourseId = fromCourseIdFor(html, "COMP1140");
+    if (!comp1140FromCourseId) throw new Error("no Alter control found for the auto-placed COMP1140");
+    const comp1110Id = await courseIdFor("COMP1110");
+    await post(
+      "/api/plan/alter",
+      new URLSearchParams({ fromCourseId: comp1140FromCourseId, toCourseId: comp1110Id }),
+    );
+
+    html = await (await fetch(baseUrl)).text();
+    expect(html).toMatch(/COMP1110[\s\S]{0,200}?auto/);
+    expect(isPlanned(html, "COMP1140")).toBe(false);
+    expect(isPlanned(html, "COMP1130")).toBe(false);
     const comp2100EntryId = await entryIdFor(html, "COMP2100");
     await post("/api/plan/remove", new URLSearchParams({ entryId: comp2100EntryId }));
-    html = await (await fetch(baseUrl)).text();
-    const comp1140EntryId = await entryIdFor(html, "COMP1140");
-    await post("/api/plan/remove", new URLSearchParams({ entryId: comp1140EntryId }));
   });
 
   it("rejects altering to a course that isn't actually an alternative", async () => {
@@ -129,7 +154,7 @@ describe("plan", () => {
     await post("/api/plan/add", new URLSearchParams({ courseId: comp2100Id, slot: "2-S1" }));
 
     let html = await (await fetch(baseUrl)).text();
-    const fromCourseId = new RegExp('name="fromCourseId" value="(\\d+)"').exec(html)?.[1];
+    const fromCourseId = fromCourseIdFor(html, "COMP1110");
     if (!fromCourseId) throw new Error("no Alter control found for the auto-placed COMP1110");
     const comp3600Id = await courseIdFor("COMP3600");
 

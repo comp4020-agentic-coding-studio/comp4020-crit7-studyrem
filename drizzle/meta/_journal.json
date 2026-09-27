@@ -15,6 +15,13 @@
       "when": 1790507233659,
       "tag": "0001_gigantic_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790527210689,
+      "tag": "0002_illegal_blackheart",
+      "breakpoints": true
     }
   ]
 }

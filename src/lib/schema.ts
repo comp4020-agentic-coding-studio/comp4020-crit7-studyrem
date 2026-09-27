@@ -83,3 +83,16 @@ export const planSettings = sqliteTable("plan_settings", {
   semester: text({ enum: ["S1", "S2"] }).notNull(),
 });
 export type PlanSettings = typeof planSettings.$inferSelect;
+
+// A standing choice of which OR-alternative auto-unfold should pick when a
+// group of alternatives needs satisfying (see "Alter" in index.astro) — keyed
+// by the group's sorted option-course-ids so it applies wherever that same
+// alternative set appears, not just the one course that triggered it. No row
+// for a group means "use the group's first option" (today's default).
+export const altPreferences = sqliteTable("alt_preferences", {
+  optionsKey: text().primaryKey(), // sorted, comma-joined course ids, e.g. "1,2"
+  preferredCourseId: int()
+    .notNull()
+    .references(() => courses.id),
+});
+export type AltPreference = typeof altPreferences.$inferSelect;

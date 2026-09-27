@@ -2,6 +2,7 @@ import {
   type Course,
   type CourseRequirement,
   deletePlanEntry,
+  getAltPreference,
   getCourseById,
   getCourseRequirement,
   getPlanEntryByCourseId,
@@ -10,6 +11,7 @@ import {
   listCourses,
   listPlanEntries,
   type PlanEntryWithCourse,
+  setAltPreference,
   setPlanSettings,
   upsertPlanEntry,
 } from "./db";
@@ -114,6 +116,39 @@ function satisfiesBefore(entry: PlanEntryWithCourse | undefined, beforeSlot: num
   return slotIndex(entry.year, entry.semester as Semester) < beforeSlot;
 }
 
+/** Identifies an OR-group by its option course ids, independent of which
+ * course's requirement it belongs to — the same alternative set (e.g.
+ * COMP1100-or-COMP1130) can appear in more than one course's requirement, and
+ * a standing "Alter" preference should apply to all of them. */
+function groupKey(group: Course[]): string {
+  return group
+    .map((o) => o.id)
+    .sort((a, b) => a - b)
+    .join(",");
+}
+
+/** Which option in this OR-group auto-unfold should place: the user's
+ * standing "Alter" preference for this exact alternative set if one's been
+ * recorded, otherwise the group's first option (today's default). */
+function pickGroupCandidate(group: Course[]): Course {
+  const preferredId = getAltPreference(groupKey(group));
+  return group.find((o) => o.id === preferredId) ?? group[0];
+}
+
+/** Find the specific OR-group (if any) that offers both courses as
+ * alternatives to each other — the group "Alter" needs to record a
+ * preference against. */
+function findGroupContaining(aCourseId: number, bCourseId: number): Course[] | null {
+  for (const course of listCourses()) {
+    for (const group of getCourseRequirement(course.id).groups) {
+      if (group.some((o) => o.id === aCourseId) && group.some((o) => o.id === bCourseId)) {
+        return group;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Ensure every AND-branch of `courseId`'s requirement is satisfied by
  * something before `beforeSlot`, auto-placing the first not-already-planned
@@ -142,7 +177,7 @@ function ensurePrereqs(courseId: number, beforeSlot: number, floorSlot: number):
     const alreadyPlanned = group.some((option) => byCourseId.has(option.id));
     if (alreadyPlanned) continue;
 
-    const candidate = group[0];
+    const candidate = pickGroupCandidate(group);
 
     const current = listPlanEntries();
     const found = nearestSlotBefore(candidate, current, beforeSlot, floorSlot);
@@ -239,46 +274,25 @@ export function alternativesFor(courseId: number): Course[] {
   return [...found.values()];
 }
 
-/** Switch an auto-placed prerequisite for one of its OR-alternatives. Pins
- * the alternative (so it survives the next rebuild as a root, instead of
- * being regenerated back to the original choice) — this is exactly the
- * "pin the alternative yourself" workaround ensurePrereqs' alreadyPlanned
- * check already respects, just reachable without knowing the trick. Keeps
- * the original slot when the alternative is offered there, otherwise finds
- * the nearest earlier slot the same way auto-placement would have. */
+/** Switch an auto-placed prerequisite for one of its OR-alternatives. Records
+ * a standing preference for this alternative set (see pickGroupCandidate)
+ * and rebuilds, rather than placing the alternative itself — that way the
+ * alternative gets auto-placed through the exact same slot/overflow logic as
+ * any other auto entry (correctly handling one offered in a different
+ * semester, including overflow if it truly doesn't fit) and stays
+ * `source: "auto"`, so it's still movable, alterable again, and
+ * garbage-collected if the course that needed it is ever removed. */
 export function alterPrerequisite(fromCourseId: number, toCourseId: number): boolean {
   const fromEntry = getPlanEntryByCourseId(fromCourseId);
   if (!fromEntry || fromEntry.source !== "auto") return false;
   if (getPlanEntryByCourseId(toCourseId)) return false;
 
-  const toCourse = getCourseById(toCourseId);
-  if (!toCourse) return false;
-  if (!alternativesFor(fromCourseId).some((c) => c.id === toCourseId)) return false;
+  const group = findGroupContaining(fromCourseId, toCourseId);
+  if (!group) return false;
 
-  const settings = getPlanSettings();
-  const floorSlot = slotIndex(settings.year, settings.semester as Semester);
-  const fromSlot = slotIndex(fromEntry.year, fromEntry.semester as Semester);
-  const entries = listPlanEntries();
-
-  let year: number;
-  let semester: Semester;
-  if (offeredIn(toCourse, fromEntry.semester as Semester)) {
-    year = fromEntry.year;
-    semester = fromEntry.semester as Semester;
-  } else {
-    const nearest = nearestSlotBefore(toCourse, entries, fromSlot + 1, floorSlot);
-    ({ year, semester } = semesterAt(nearest ?? floorSlot));
-  }
-
-  upsertPlanEntry({
-    courseId: toCourseId,
-    year,
-    semester,
-    position: leftmostFreeSlot(entries, year, semester, toCourseId),
-    source: "pinned",
-  });
+  setAltPreference(groupKey(group), toCourseId);
   rebuildAutoEntries();
-  return true;
+  return getPlanEntryByCourseId(toCourseId)?.source === "auto";
 }
 
 export function completeCourse(courseId: number, year: number, semester: Semester): boolean {
