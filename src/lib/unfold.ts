@@ -2,6 +2,7 @@ import {
   type Course,
   type CourseRequirement,
   deletePlanEntry,
+  getCourseById,
   getCourseRequirement,
   getPlanSettings,
   listPlanEntries,
@@ -36,7 +37,7 @@ export const SEMESTERS: Semester[] = ["S1", "S2"];
  * shows before a placement counts as "overflowing" it. */
 export const SLOTS_PER_SEMESTER = 4;
 
-function offeredIn(course: Course, semester: Semester): boolean {
+export function offeredIn(course: Course, semester: Semester): boolean {
   return course.semesters.split(",").includes(semester);
 }
 
@@ -123,12 +124,17 @@ function ensurePrereqs(courseId: number, beforeSlot: number, floorSlot: number):
     );
     if (alreadySatisfied) continue;
 
-    // Prefer an option with no existing plan entry at all — one that's
-    // already planned elsewhere (necessarily at/after beforeSlot, since we
-    // just checked satisfaction) is left in place, not moved or duplicated;
-    // it'll surface as an ordering conflict instead.
-    const candidate = group.find((option) => !byCourseId.has(option.id)) ?? group[0];
-    if (byCourseId.has(candidate.id)) continue;
+    // If any option in this OR-group is already planned at all — even one
+    // that's mistimed and failed the check above — don't auto-place a
+    // *different* alternative alongside it. Two OR-alternatives are often
+    // mutually incompatible in reality (e.g. COMP1100 vs COMP1130, "an
+    // alternative start, not a chain"), so adding a substitute would just
+    // duplicate the requirement; the mistimed one surfaces as an ordering
+    // conflict instead.
+    const alreadyPlanned = group.some((option) => byCourseId.has(option.id));
+    if (alreadyPlanned) continue;
+
+    const candidate = group[0];
 
     const current = listPlanEntries();
     const found = nearestSlotBefore(candidate, current, beforeSlot, floorSlot);
@@ -173,6 +179,9 @@ export function rebuildAutoEntries(): void {
 }
 
 export function placeCourse(courseId: number, year: number, semester: Semester): void {
+  const course = getCourseById(courseId);
+  if (!course || !offeredIn(course, semester)) return;
+
   const entries = listPlanEntries();
   upsertPlanEntry({
     courseId,

@@ -1,6 +1,7 @@
 ---
 import { getPlanSettings, listCourses, listPlanEntries, type PlanEntryWithCourse } from "../lib/db";
 import {
+  offeredIn,
   orderingConflicts,
   overflowEntries,
   PLANNING_YEARS,
@@ -163,11 +164,13 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
                         <form method="post" action="/api/plan/move" class="inline">
                           <input type="hidden" name="courseId" value={entry.courseId} />
                           <select name="slot" aria-label={`Move ${entry.course.code} to`}>
-                            {slotOptions.map((opt) => (
-                              <option value={opt.value} selected={opt.value === `${year}-${semester}`}>
-                                {opt.label}
-                              </option>
-                            ))}
+                            {slotOptions
+                              .filter((opt) => offeredIn(entry.course, opt.value.split("-")[1] as "S1" | "S2"))
+                              .map((opt) => (
+                                <option value={opt.value} selected={opt.value === `${year}-${semester}`}>
+                                  {opt.label}
+                                </option>
+                              ))}
                           </select>
                           <button>Move</button>
                         </form>
