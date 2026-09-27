@@ -222,7 +222,7 @@ export function listPlanEntries(): PlanEntryWithCourse[] {
     .map((row) => ({ ...row.plan_entries, course: row.courses }))
     .sort((a, b) => {
       const slot = (e: PlanEntryWithCourse) => (e.year - 1) * 2 + (e.semester === "S2" ? 1 : 0);
-      return slot(a) - slot(b) || a.course.code.localeCompare(b.course.code);
+      return slot(a) - slot(b) || a.position - b.position;
     });
 }
 
@@ -238,6 +238,7 @@ export function upsertPlanEntry(input: {
   courseId: number;
   year: number;
   semester: "S1" | "S2";
+  position: number;
   source: "pinned" | "auto" | "completed";
   overflow?: boolean;
   overflowReason?: string | null;
@@ -251,6 +252,7 @@ export function upsertPlanEntry(input: {
     courseId: input.courseId,
     year: input.year,
     semester: input.semester,
+    position: input.position,
     source: input.source,
     overflow: input.overflow ?? false,
     overflowReason: input.overflowReason ?? null,

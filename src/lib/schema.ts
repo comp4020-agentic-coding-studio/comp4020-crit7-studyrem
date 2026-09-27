@@ -60,6 +60,11 @@ export const planEntries = sqliteTable(
       .references(() => courses.id),
     year: int().notNull(),
     semester: text({ enum: ["S1", "S2"] }).notNull(),
+    // 0-based column within its (year, semester) row — a normal semester has
+    // 4 (positions 0-3); assigned once at placement time, not recomputed on
+    // every render, so removing a course leaves a gap rather than reflowing
+    // everything else in that row.
+    position: int().notNull().default(0),
     source: text({ enum: ["pinned", "auto", "completed"] }).notNull(),
     // set when auto-unfold had to clamp this entry to the current-position
     // floor instead of a real nearest-possible slot

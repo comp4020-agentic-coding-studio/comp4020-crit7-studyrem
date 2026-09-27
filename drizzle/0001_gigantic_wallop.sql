@@ -1,0 +1,1 @@
+ALTER TABLE `plan_entries` ADD `position` integer DEFAULT 0 NOT NULL;

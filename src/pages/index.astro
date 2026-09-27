@@ -1,11 +1,12 @@
 ---
-import { getPlanSettings, listCourses, listPlanEntries } from "../lib/db";
+import { getPlanSettings, listCourses, listPlanEntries, type PlanEntryWithCourse } from "../lib/db";
 import {
   orderingConflicts,
   overflowEntries,
   PLANNING_YEARS,
   SEMESTERS,
   slotIndex,
+  SLOTS_PER_SEMESTER,
 } from "../lib/unfold";
 import "../styles.css";
 
@@ -26,7 +27,7 @@ const currentSlotValue = `${settings.year}-${settings.semester}`;
 function entriesAt(year: number, semester: "S1" | "S2") {
   return entries
     .filter((e) => e.year === year && e.semester === semester && e.source !== "completed")
-    .sort((a, b) => a.course.code.localeCompare(b.course.code));
+    .sort((a, b) => a.position - b.position);
 }
 
 const completed = entries
@@ -34,6 +35,24 @@ const completed = entries
   .sort((a, b) => a.course.code.localeCompare(b.course.code));
 
 const floorSlot = slotIndex(settings.year, settings.semester as "S1" | "S2");
+
+// One row per chronological semester, one fixed slot per normal course load
+// (SLOTS_PER_SEMESTER) plus any position that overflowed past it — see
+// leftmostFreeSlot in src/lib/unfold.ts for how a slot gets assigned.
+type SlotCell = { entry: PlanEntryWithCourse | null; isOverflowSlot: boolean };
+
+const timeline = PLANNING_YEARS.flatMap((year) =>
+  SEMESTERS.map((semester) => {
+    const at = entriesAt(year, semester);
+    const cells: SlotCell[] = Array.from({ length: SLOTS_PER_SEMESTER }, (_, position) => ({
+      entry: at.find((e) => e.position === position) ?? null,
+      isOverflowSlot: false,
+    }));
+    const extra = at.filter((e) => e.position >= SLOTS_PER_SEMESTER);
+    for (const entry of extra) cells.push({ entry, isOverflowSlot: true });
+    return { year, semester, cells, cellSlot: slotIndex(year, semester) };
+  }),
+);
 ---
 
 <!doctype html>
@@ -120,69 +139,57 @@ const floorSlot = slotIndex(settings.year, settings.semester as "S1" | "S2");
         <button>Add</button>
       </form>
 
-      <table>
-        <caption class="sr-only">Semester-by-semester plan</caption>
-        <thead>
-          <tr>
-            <th scope="col">Year</th>
-            <th scope="col">Semester 1</th>
-            <th scope="col">Semester 2</th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            PLANNING_YEARS.map((year) => (
-              <tr>
-                <th scope="row">Year {year}</th>
-                {SEMESTERS.map((semester) => {
-                  const cellSlot = slotIndex(year, semester);
-                  const isBeforeFloor = cellSlot < floorSlot;
-                  return (
-                    <td class={isBeforeFloor ? "past-slot" : ""}>
-                      <ul class="slot">
-                        {entriesAt(year, semester).map((entry) => (
-                          <li class={entry.overflow ? "overflow" : ""}>
-                            <span class="code">{entry.course.code}</span>{" "}
-                            <span class="badge">{entry.source}</span>
-                            <div class="controls">
-                              {entry.source === "auto" && (
-                                <form method="post" action="/api/plan/move" class="inline">
-                                  <input type="hidden" name="courseId" value={entry.courseId} />
-                                  <input type="hidden" name="slot" value={`${year}-${semester}`} />
-                                  <button>Pin here</button>
-                                </form>
-                              )}
-                              <form method="post" action="/api/plan/move" class="inline">
-                                <input type="hidden" name="courseId" value={entry.courseId} />
-                                <select name="slot" aria-label={`Move ${entry.course.code} to`}>
-                                  {slotOptions.map((opt) => (
-                                    <option value={opt.value} selected={opt.value === `${year}-${semester}`}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button>Move</button>
-                              </form>
-                              <form method="post" action="/api/plan/complete" class="inline">
-                                <input type="hidden" name="courseId" value={entry.courseId} />
-                                <button>Mark completed</button>
-                              </form>
-                              <form method="post" action="/api/plan/remove" class="inline">
-                                <input type="hidden" name="entryId" value={entry.id} />
-                                <button>Remove</button>
-                              </form>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
+      <ol class="timeline">
+        {
+          timeline.map(({ year, semester, cells, cellSlot }) => (
+            <li class={`timeline-row ${cellSlot < floorSlot ? "past-slot" : ""}`}>
+              <h2>
+                Year {year} — {semester}
+              </h2>
+              <ul class="slots">
+                {cells.map(({ entry, isOverflowSlot }) =>
+                  entry ? (
+                    <li class={`${entry.overflow ? "overflow" : ""} ${isOverflowSlot ? "overflow-slot" : ""}`.trim()}>
+                      <span class="code">{entry.course.code}</span>{" "}
+                      <span class="badge">{entry.source}</span>
+                      <div class="controls">
+                        {entry.source === "auto" && (
+                          <form method="post" action="/api/plan/move" class="inline">
+                            <input type="hidden" name="courseId" value={entry.courseId} />
+                            <input type="hidden" name="slot" value={`${year}-${semester}`} />
+                            <button>Pin here</button>
+                          </form>
+                        )}
+                        <form method="post" action="/api/plan/move" class="inline">
+                          <input type="hidden" name="courseId" value={entry.courseId} />
+                          <select name="slot" aria-label={`Move ${entry.course.code} to`}>
+                            {slotOptions.map((opt) => (
+                              <option value={opt.value} selected={opt.value === `${year}-${semester}`}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button>Move</button>
+                        </form>
+                        <form method="post" action="/api/plan/complete" class="inline">
+                          <input type="hidden" name="courseId" value={entry.courseId} />
+                          <button>Mark completed</button>
+                        </form>
+                        <form method="post" action="/api/plan/remove" class="inline">
+                          <input type="hidden" name="entryId" value={entry.id} />
+                          <button>Remove</button>
+                        </form>
+                      </div>
+                    </li>
+                  ) : (
+                    <li class="slot-open">Open slot</li>
+                  ),
+                )}
+              </ul>
+            </li>
+          ))
+        }
+      </ol>
 
       <h2>Completed</h2>
       {

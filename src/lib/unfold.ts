@@ -32,18 +32,67 @@ export function parseSlotValue(value: string): { year: number; semester: Semeste
 export const PLANNING_YEARS = [1, 2, 3, 4];
 export const SEMESTERS: Semester[] = ["S1", "S2"];
 
+/** A normal semester's course load — the number of fixed columns a plan row
+ * shows before a placement counts as "overflowing" it. */
+export const SLOTS_PER_SEMESTER = 4;
+
 function offeredIn(course: Course, semester: Semester): boolean {
   return course.semesters.split(",").includes(semester);
 }
 
+/** Entries that actually occupy a column in this (year, semester) row —
+ * completed entries stay off the grid entirely and never block a slot. */
+function entriesInSlot(
+  entries: PlanEntryWithCourse[],
+  year: number,
+  semester: Semester,
+): PlanEntryWithCourse[] {
+  return entries.filter(
+    (e) => e.year === year && e.semester === semester && e.source !== "completed",
+  );
+}
+
+/** The lowest not-yet-taken column in this (year, semester) row, ignoring
+ * the given course's own current entry (so re-pinning a course to the row
+ * it's already in doesn't count itself as the blocker). Unbounded above
+ * `SLOTS_PER_SEMESTER - 1`: a 5th course still gets a position, it's just
+ * rendered as visible overflow rather than silently rejected. */
+function leftmostFreeSlot(
+  entries: PlanEntryWithCourse[],
+  year: number,
+  semester: Semester,
+  excludeCourseId?: number,
+): number {
+  const taken = new Set(
+    entriesInSlot(entries, year, semester)
+      .filter((e) => e.courseId !== excludeCourseId)
+      .map((e) => e.position),
+  );
+  let position = 0;
+  while (taken.has(position)) position++;
+  return position;
+}
+
 /**
  * Walk backwards from `beforeSlot - 1` down to `floorSlot` looking for the
- * nearest slot the course is actually offered in. Returns null if there's no
- * room — the caller clamps to the floor and records an overflow.
+ * nearest slot the course is both offered in and has room in (fewer than
+ * `SLOTS_PER_SEMESTER` courses already). Returns null if there's no such
+ * slot — the caller clamps to the floor and records an overflow.
  */
-function nearestSlotBefore(course: Course, beforeSlot: number, floorSlot: number): number | null {
+function nearestSlotBefore(
+  course: Course,
+  entries: PlanEntryWithCourse[],
+  beforeSlot: number,
+  floorSlot: number,
+): number | null {
   for (let slot = beforeSlot - 1; slot >= floorSlot; slot--) {
-    if (offeredIn(course, semesterAt(slot).semester)) return slot;
+    const { year, semester } = semesterAt(slot);
+    if (
+      offeredIn(course, semester) &&
+      entriesInSlot(entries, year, semester).length < SLOTS_PER_SEMESTER
+    ) {
+      return slot;
+    }
   }
   return null;
 }
@@ -64,7 +113,8 @@ function satisfiesBefore(entry: PlanEntryWithCourse | undefined, beforeSlot: num
  */
 function ensurePrereqs(courseId: number, beforeSlot: number, floorSlot: number): void {
   const requirement: CourseRequirement = getCourseRequirement(courseId);
-  const byCourseId = new Map(listPlanEntries().map((e) => [e.courseId, e]));
+  const entries = listPlanEntries();
+  const byCourseId = new Map(entries.map((e) => [e.courseId, e]));
 
   for (const group of requirement.groups) {
     if (group.length === 0) continue;
@@ -80,18 +130,20 @@ function ensurePrereqs(courseId: number, beforeSlot: number, floorSlot: number):
     const candidate = group.find((option) => !byCourseId.has(option.id)) ?? group[0];
     if (byCourseId.has(candidate.id)) continue;
 
-    const found = nearestSlotBefore(candidate, beforeSlot, floorSlot);
+    const current = listPlanEntries();
+    const found = nearestSlotBefore(candidate, current, beforeSlot, floorSlot);
     const chosenSlot = found ?? floorSlot;
     const { year, semester } = semesterAt(chosenSlot);
     const placed = upsertPlanEntry({
       courseId: candidate.id,
       year,
       semester,
+      position: leftmostFreeSlot(current, year, semester, candidate.id),
       source: "auto",
       overflow: found === null,
       overflowReason:
         found === null
-          ? `${candidate.code} had to be squeezed onto your current position (${semester} Year ${year}) to satisfy ${requirement.course.code} in time — there wasn't a real earlier slot it's offered in.`
+          ? `${candidate.code} had to be squeezed onto your current position (${semester} Year ${year}) to satisfy ${requirement.course.code} in time — there wasn't a real earlier slot it's offered in with room.`
           : null,
     });
     byCourseId.set(candidate.id, { ...placed, course: candidate });
@@ -121,7 +173,14 @@ export function rebuildAutoEntries(): void {
 }
 
 export function placeCourse(courseId: number, year: number, semester: Semester): void {
-  upsertPlanEntry({ courseId, year, semester, source: "pinned" });
+  const entries = listPlanEntries();
+  upsertPlanEntry({
+    courseId,
+    year,
+    semester,
+    position: leftmostFreeSlot(entries, year, semester, courseId),
+    source: "pinned",
+  });
   rebuildAutoEntries();
 }
 
@@ -137,7 +196,9 @@ export function moveCourse(courseId: number, year: number, semester: Semester): 
 }
 
 export function completeCourse(courseId: number, year: number, semester: Semester): void {
-  upsertPlanEntry({ courseId, year, semester, source: "completed" });
+  // Position is meaningless here — completed entries never render in the
+  // slot grid — but the column is NOT NULL, so pick something harmless.
+  upsertPlanEntry({ courseId, year, semester, position: 0, source: "completed" });
   rebuildAutoEntries();
 }
 
