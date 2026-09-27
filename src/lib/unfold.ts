@@ -205,6 +205,8 @@ export function moveCourse(courseId: number, year: number, semester: Semester): 
 }
 
 export function completeCourse(courseId: number, year: number, semester: Semester): void {
+  if (!getCourseById(courseId)) return;
+
   // Position is meaningless here — completed entries never render in the
   // slot grid — but the column is NOT NULL, so pick something harmless.
   upsertPlanEntry({ courseId, year, semester, position: 0, source: "completed" });
