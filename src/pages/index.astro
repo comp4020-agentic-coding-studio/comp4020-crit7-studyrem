@@ -1,8 +1,39 @@
 ---
-import { listMessages } from "../lib/db";
+import { getPlanSettings, listCourses, listPlanEntries } from "../lib/db";
+import {
+  orderingConflicts,
+  overflowEntries,
+  PLANNING_YEARS,
+  SEMESTERS,
+  slotIndex,
+} from "../lib/unfold";
 import "../styles.css";
 
-const messages = listMessages();
+const settings = getPlanSettings();
+const entries = listPlanEntries();
+const courses = listCourses();
+const overflow = overflowEntries();
+const conflicts = orderingConflicts();
+
+const plannedCourseIds = new Set(entries.map((e) => e.courseId));
+const unplannedCourses = courses.filter((c) => !plannedCourseIds.has(c.id));
+
+const slotOptions = PLANNING_YEARS.flatMap((year) =>
+  SEMESTERS.map((semester) => ({ value: `${year}-${semester}`, label: `${semester} Year ${year}` })),
+);
+const currentSlotValue = `${settings.year}-${settings.semester}`;
+
+function entriesAt(year: number, semester: "S1" | "S2") {
+  return entries
+    .filter((e) => e.year === year && e.semester === semester && e.source !== "completed")
+    .sort((a, b) => a.course.code.localeCompare(b.course.code));
+}
+
+const completed = entries
+  .filter((e) => e.source === "completed")
+  .sort((a, b) => a.course.code.localeCompare(b.course.code));
+
+const floorSlot = slotIndex(settings.year, settings.semester as "S1" | "S2");
 ---
 
 <!doctype html>
@@ -10,44 +41,169 @@ const messages = listMessages();
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>COMP4020 prototype</title>
+    <title>Your degree plan — Degree Planner</title>
   </head>
   <body>
     <nav aria-label="site">
-      <a href="/">Guestbook</a>
+      <a href="/">Plan</a>
+      <a href="/courses/">Requirements</a>
       <a href="/readme/">About</a>
     </nav>
     <main>
-      <h1>Guestbook</h1>
+      <h1>Your degree plan</h1>
       <p>
-        A minimal full-stack starter: messages live in SQLite on the machine's
-        volume (state survives a reload and a redeploy), and new messages
-        appear in every open tab over a server-sent-events stream — open this
-        page twice and sign it in one. Replace all of this with your own
-        prototype.
+        Add a course and its unmet prerequisites automatically back-fill into
+        the nearest earlier semester they're offered in. Auto-placed courses
+        can be pinned or moved; nothing you've placed yourself is ever moved
+        for you.
       </p>
-      <form method="post" action="/api/messages">
-        <label for="body">Leave a message</label>
-        <input id="body" name="body" required maxlength="500" />
-        <button>Sign</button>
+
+      <form method="post" action="/api/plan/position" class="position-form">
+        <label for="position">Current position (auto-unfold won't schedule earlier than this)</label>
+        <select id="position" name="slot">
+          {
+            slotOptions.map((opt) => (
+              <option value={opt.value} selected={opt.value === currentSlotValue}>
+                {opt.label}
+              </option>
+            ))
+          }
+        </select>
+        <button>Update</button>
       </form>
-      <ul id="messages">
-        {messages.map((message) => <li>{message.body}</li>)}
-      </ul>
+
+      {
+        overflow.length > 0 && (
+          <div class="banner banner-overflow" role="alert">
+            <strong>Overflow — this chain doesn't fit before your target semester:</strong>
+            <ul>
+              {overflow.map((e) => (
+                <li>{e.overflowReason}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+
+      {
+        conflicts.length > 0 && (
+          <div class="banner banner-conflict">
+            <strong>Ordering to double-check:</strong>
+            <ul>
+              {conflicts.map((c) => (
+                <li>
+                  {c.courseCode} needs {c.needs}, which is scheduled at {c.scheduledAt} — not
+                  clearly before it.
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+
+      <form method="post" action="/api/plan/add" class="add-form">
+        <label for="courseId">Add a course</label>
+        <select id="courseId" name="courseId" required>
+          <option value="">Choose a course…</option>
+          {
+            unplannedCourses.map((c) => (
+              <option value={c.id}>
+                {c.code} — {c.title}
+              </option>
+            ))
+          }
+        </select>
+        <select name="slot" aria-label="Target semester">
+          {slotOptions.map((opt) => <option value={opt.value}>{opt.label}</option>)}
+        </select>
+        <button>Add</button>
+      </form>
+
+      <table>
+        <caption class="sr-only">Semester-by-semester plan</caption>
+        <thead>
+          <tr>
+            <th scope="col">Year</th>
+            <th scope="col">Semester 1</th>
+            <th scope="col">Semester 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            PLANNING_YEARS.map((year) => (
+              <tr>
+                <th scope="row">Year {year}</th>
+                {SEMESTERS.map((semester) => {
+                  const cellSlot = slotIndex(year, semester);
+                  const isBeforeFloor = cellSlot < floorSlot;
+                  return (
+                    <td class={isBeforeFloor ? "past-slot" : ""}>
+                      <ul class="slot">
+                        {entriesAt(year, semester).map((entry) => (
+                          <li class={entry.overflow ? "overflow" : ""}>
+                            <span class="code">{entry.course.code}</span>{" "}
+                            <span class="badge">{entry.source}</span>
+                            <div class="controls">
+                              {entry.source === "auto" && (
+                                <form method="post" action="/api/plan/move" class="inline">
+                                  <input type="hidden" name="courseId" value={entry.courseId} />
+                                  <input type="hidden" name="slot" value={`${year}-${semester}`} />
+                                  <button>Pin here</button>
+                                </form>
+                              )}
+                              <form method="post" action="/api/plan/move" class="inline">
+                                <input type="hidden" name="courseId" value={entry.courseId} />
+                                <select name="slot" aria-label={`Move ${entry.course.code} to`}>
+                                  {slotOptions.map((opt) => (
+                                    <option value={opt.value} selected={opt.value === `${year}-${semester}`}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button>Move</button>
+                              </form>
+                              <form method="post" action="/api/plan/complete" class="inline">
+                                <input type="hidden" name="courseId" value={entry.courseId} />
+                                <button>Mark completed</button>
+                              </form>
+                              <form method="post" action="/api/plan/remove" class="inline">
+                                <input type="hidden" name="entryId" value={entry.id} />
+                                <button>Remove</button>
+                              </form>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+
+      <h2>Completed</h2>
+      {
+        completed.length === 0 ? (
+          <p>Nothing marked completed yet.</p>
+        ) : (
+          <ul>
+            {completed.map((entry) => (
+              <li>
+                {entry.course.code} — {entry.course.title}
+              </li>
+            ))}
+          </ul>
+        )
+      }
     </main>
     <script>
-      // The live half of the demo: subscribe to the SSE stream and prepend
-      // messages as they arrive. The form itself needs none of this — its
-      // POST + redirect re-renders the submitting tab from SQLite; this
-      // stream is how every other tab finds out.
-      const list = document.querySelector("#messages");
+      // Every other open tab hears about a mutation over SSE and reloads to
+      // pick it up from SQLite; the submitting tab already re-rendered via
+      // the form's own 303 redirect.
       const source = new EventSource("/api/events");
-      source.addEventListener("message", (event) => {
-        const message = JSON.parse(event.data);
-        const item = document.createElement("li");
-        item.textContent = message.body;
-        list?.prepend(item);
-      });
+      source.addEventListener("message", () => location.reload());
     </script>
   </body>
 </html>

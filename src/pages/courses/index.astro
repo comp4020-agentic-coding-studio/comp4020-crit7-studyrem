@@ -1,0 +1,66 @@
+---
+import { listCourseRequirements } from "../../lib/db";
+import "../../styles.css";
+
+const requirements = listCourseRequirements();
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Course requirements — Degree Planner</title>
+  </head>
+  <body>
+    <nav aria-label="site">
+      <a href="/">Plan</a>
+      <a href="/courses/">Requirements</a>
+      <a href="/readme/">About</a>
+    </nav>
+    <main>
+      <h1>Course requirements</h1>
+      <p>
+        What's exactly needed for each course, and the courses that meet that
+        need. This is the accessible source of truth for prerequisite data —
+        the plan page's auto-unfold reads from exactly this.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Code</th>
+            <th scope="col">Title</th>
+            <th scope="col">Units</th>
+            <th scope="col">Offered</th>
+            <th scope="col">Requires</th>
+            <th scope="col">Also required (not modelled)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            requirements.map(({ course, groups }) => (
+              <tr>
+                <td>{course.code}</td>
+                <td>{course.title}</td>
+                <td>{course.units}</td>
+                <td>{course.semesters.split(",").join(" / ")}</td>
+                <td>
+                  {groups.length === 0 ? (
+                    "None modelled"
+                  ) : (
+                    <ul>
+                      {groups.map((group) => (
+                        <li>{group.map((c) => c.code).join(" or ")}</li>
+                      ))}
+                    </ul>
+                  )}
+                </td>
+                <td>{course.notes ?? "—"}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </main>
+  </body>
+</html>

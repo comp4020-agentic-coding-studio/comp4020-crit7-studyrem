@@ -7,7 +7,7 @@ body {
 }
 
 main {
-  max-width: 40rem;
+  max-width: 60rem;
   margin: 0 auto;
 }
 
@@ -20,12 +20,16 @@ form {
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
-  margin-block: 1.5rem;
+  margin-block: 1rem;
 }
 
-input {
-  flex: 1;
-  min-width: 12rem;
+form.inline {
+  margin: 0;
+  display: inline-flex;
+}
+
+input,
+select {
   padding: 0.4rem 0.6rem;
   font: inherit;
 }
@@ -33,8 +37,93 @@ input {
 button {
   padding: 0.4rem 1rem;
   font: inherit;
+  cursor: pointer;
 }
 
-#messages {
-  padding-inline-start: 1.2rem;
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: 1.5rem;
+}
+
+th,
+td {
+  border: 1px solid #ccc;
+  padding: 0.6rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+td.past-slot {
+  background: #f2f2f2;
+}
+
+ul.slot {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+ul.slot li {
+  border: 1px solid #ddd;
+  border-radius: 0.4rem;
+  padding: 0.5rem;
+}
+
+ul.slot li.overflow {
+  border-color: #b3261e;
+  background: #fdecea;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: #e5e9f0;
+  color: #333;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.controls form {
+  margin: 0;
+}
+
+.banner {
+  border-radius: 0.4rem;
+  padding: 0.75rem 1rem;
+  margin-block: 1rem;
+}
+
+.banner-overflow {
+  background: #fdecea;
+  border: 1px solid #b3261e;
+}
+
+.banner-conflict {
+  background: #fff8e1;
+  border: 1px solid #b78400;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

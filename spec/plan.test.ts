@@ -1,0 +1,112 @@
+import { beforeAll, describe, expect, inject, it } from "vitest";
+
+// Drives the running (built) app over HTTP, like the starter's guestbook
+// test did, to prove the plan's core claims hold in THIS repo: a placement
+// persists, adding a course auto-unfolds its missing prerequisite chain
+// backward, removing it garbage-collects what nothing else needs, and other
+// tabs hear about a mutation over the SSE stream.
+const baseUrl = inject("baseUrl");
+
+const post = (path: string, body: URLSearchParams) =>
+  fetch(new URL(path, baseUrl), {
+    method: "POST",
+    headers: { origin: baseUrl },
+    body,
+    redirect: "manual",
+  });
+
+async function courseIdFor(code: string): Promise<string> {
+  const html = await (await fetch(baseUrl)).text();
+  const match = new RegExp(`value="(\\d+)">${code} `).exec(html);
+  if (!match) throw new Error(`${code} not found in the add-course picker`);
+  return match[1];
+}
+
+async function entryIdFor(html: string, code: string): Promise<string> {
+  const match = new RegExp(`${code}[\\s\\S]{0,800}?name="entryId" value="(\\d+)"`).exec(html);
+  if (!match) throw new Error(`no plan entry (with a remove control) found for ${code}`);
+  return match[1];
+}
+
+// The course picker keeps listing every *unplanned* course by code, so a
+// bare substring check can't tell "removed from the plan" apart from
+// "back in the add-a-course dropdown". A course actually placed on the grid
+// has its status badge right next to its code; the picker option doesn't.
+function isPlanned(html: string, code: string): boolean {
+  return new RegExp(`${code}</span> <span class="badge">`).test(html);
+}
+
+describe("plan", () => {
+  let comp1100Id: string;
+  let comp2120Id: string;
+
+  beforeAll(async () => {
+    comp1100Id = await courseIdFor("COMP1100");
+    comp2120Id = await courseIdFor("COMP2120");
+  });
+
+  it("pins a course at the chosen slot and persists it across reload", async () => {
+    const res = await post(
+      "/api/plan/add",
+      new URLSearchParams({ courseId: comp1100Id, slot: "1-S1" }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+
+    const html = await (await fetch(baseUrl)).text();
+    expect(html).toContain("COMP1100");
+    expect(html).toMatch(/COMP1100[\s\S]{0,200}?pinned/);
+  });
+
+  it("auto-unfolds a missing prerequisite chain into the nearest earlier semesters", async () => {
+    // COMP2120 -> COMP2100 -> (COMP1110 or COMP1140) -> (COMP1100 or COMP1130).
+    // COMP1100 is already pinned (previous test), so that branch of the
+    // chain is already satisfied and only COMP2100 and COMP1110 should
+    // appear as new auto-placed entries.
+    const res = await post(
+      "/api/plan/add",
+      new URLSearchParams({ courseId: comp2120Id, slot: "4-S2" }),
+    );
+    expect(res.status).toBe(303);
+
+    const html = await (await fetch(baseUrl)).text();
+    expect(html).toContain("COMP2120");
+    expect(html).toMatch(/COMP2100[\s\S]{0,200}?auto/);
+    expect(html).toMatch(/COMP1110[\s\S]{0,200}?auto/);
+  });
+
+  it("removing the root garbage-collects the auto-placed chain it needed", async () => {
+    const before = await (await fetch(baseUrl)).text();
+    const entryId = await entryIdFor(before, "COMP2120");
+
+    const res = await post("/api/plan/remove", new URLSearchParams({ entryId }));
+    expect(res.status).toBe(303);
+
+    const after = await (await fetch(baseUrl)).text();
+    expect(isPlanned(after, "COMP2120")).toBe(false);
+    expect(isPlanned(after, "COMP2100")).toBe(false);
+    expect(isPlanned(after, "COMP1110")).toBe(false);
+    // COMP1100 was pinned directly, independent of the chain — it survives.
+    expect(isPlanned(after, "COMP1100")).toBe(true);
+  });
+
+  it("broadcasts a plan mutation over the SSE stream", async () => {
+    const comp3600Id = await courseIdFor("COMP3600");
+
+    const stream = await fetch(new URL("/api/events", baseUrl));
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+    const reader = stream.body?.getReader();
+    if (!reader) throw new Error("no response body");
+
+    await post("/api/plan/add", new URLSearchParams({ courseId: comp3600Id, slot: "3-S2" }));
+
+    const decoder = new TextDecoder();
+    let received = "";
+    while (!received.includes("data: changed")) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("stream ended before the event arrived");
+      received += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+  }, 10_000);
+});
