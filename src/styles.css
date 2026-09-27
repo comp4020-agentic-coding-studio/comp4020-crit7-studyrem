@@ -116,6 +116,54 @@ ul.slot li.overflow {
   border: 1px solid #b78400;
 }
 
+.tree-wrap {
+  overflow-x: auto;
+  border: 1px solid #ddd;
+  border-radius: 0.4rem;
+  padding: 1rem;
+  background: #fafafa;
+}
+
+.tree-node {
+  fill: #fff;
+  stroke: #333;
+  stroke-width: 1.5;
+}
+
+.tree-label {
+  font: 600 12px system-ui, sans-serif;
+  fill: #1a1a1a;
+}
+
+.tree-edge {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0.75;
+}
+
+.legend {
+  font-size: 0.85rem;
+  color: #444;
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 2px;
+  background: #0b5fff;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

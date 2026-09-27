@@ -1,0 +1,79 @@
+---
+import { listCourseRequirements } from "../../lib/db";
+import { layoutTree, TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "../../lib/tree";
+import "../../styles.css";
+
+const requirements = listCourseRequirements();
+const layout = layoutTree(requirements);
+const groupColors = ["#0b5fff", "#1a7f37", "#b3261e", "#8a4fbf"];
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tech tree — Degree Planner</title>
+  </head>
+  <body>
+    <nav aria-label="site">
+      <a href="/">Plan</a>
+      <a href="/courses/">Requirements</a>
+      <a href="/tree/">Tech tree</a>
+      <a href="/readme/">About</a>
+    </nav>
+    <main>
+      <h1>Tech tree</h1>
+      <p>
+        A map of how the seeded courses chain together, laid out left to right
+        by how many prerequisite steps deep each one sits. This diagram is
+        purely decorative (<code>aria-hidden</code>) — the
+        <a href="/courses/">requirements table</a> is the accessible source of
+        truth for the same information.
+      </p>
+      <div class="tree-wrap">
+        <svg
+          aria-hidden="true"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          width={layout.width}
+          height={layout.height}
+        >
+          {
+            layout.edges.map((edge) => (
+              <path
+                d={edge.path}
+                class="tree-edge"
+                style={`stroke: ${groupColors[edge.groupIndex % groupColors.length]}`}
+                stroke-dasharray={edge.isOr ? "4 3" : undefined}
+              />
+            ))
+          }
+          {
+            layout.nodes.map((node) => (
+              <g transform={`translate(${node.x}, ${node.y})`}>
+                <rect width={TREE_NODE_WIDTH} height={TREE_NODE_HEIGHT} rx="6" class="tree-node" />
+                <text
+                  x={TREE_NODE_WIDTH / 2}
+                  y={TREE_NODE_HEIGHT / 2 + 4}
+                  text-anchor="middle"
+                  class="tree-label"
+                >
+                  {node.code}
+                </text>
+              </g>
+            ))
+          }
+        </svg>
+      </div>
+      <p class="legend">
+        <span class="legend-item">
+          <span class="legend-swatch"></span> a required course, one line per requirement
+        </span>
+        <span class="legend-item">
+          dashed lines that meet at the same point are alternatives — either one satisfies
+          that requirement
+        </span>
+      </p>
+    </main>
+  </body>
+</html>
