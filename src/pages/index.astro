@@ -17,6 +17,17 @@ const courses = listCourses();
 const overflow = overflowEntries();
 const conflicts = orderingConflicts();
 
+const ERROR_MESSAGES: Record<string, string> = {
+  "missing-fields": "Choose a course and a semester before submitting.",
+  "not-offered":
+    "That course can't go there — either it isn't offered in that semester, or it's already marked completed.",
+  "invalid-entry": "Couldn't find that plan entry to remove — it may already be gone.",
+  "invalid-course": "That course couldn't be found.",
+  "invalid-slot": "That's not a valid year/semester.",
+};
+const errorCode = Astro.url.searchParams.get("error");
+const errorMessage = errorCode ? (ERROR_MESSAGES[errorCode] ?? "That action didn't go through.") : null;
+
 const plannedCourseIds = new Set(entries.map((e) => e.courseId));
 const unplannedCourses = courses.filter((c) => !plannedCourseIds.has(c.id));
 
@@ -92,6 +103,14 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
         </select>
         <button>Update</button>
       </form>
+
+      {
+        errorMessage && (
+          <div class="banner banner-error" role="alert">
+            {errorMessage}
+          </div>
+        )
+      }
 
       {
         overflow.length > 0 && (

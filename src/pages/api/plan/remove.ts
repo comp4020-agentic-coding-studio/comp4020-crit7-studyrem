@@ -7,9 +7,11 @@ import { bus } from "../../../lib/events";
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
   const entryId = Number(form.get("entryId"));
-  if (entryId) {
-    removeCourse(entryId);
-    bus.emit("planChanged");
-  }
+  if (!entryId) return redirect("/?error=invalid-entry", 303);
+
+  const applied = removeCourse(entryId);
+  if (!applied) return redirect("/?error=invalid-entry", 303);
+
+  bus.emit("planChanged");
   return redirect("/", 303);
 };

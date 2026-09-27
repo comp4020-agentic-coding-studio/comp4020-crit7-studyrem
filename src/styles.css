@@ -153,6 +153,11 @@ ul.slots li.overflow-slot {
   border: 1px solid #b78400;
 }
 
+.banner-error {
+  background: #eceff1;
+  border: 1px solid #546e7a;
+}
+
 .tree-wrap {
   overflow-x: auto;
   border: 1px solid #ddd;

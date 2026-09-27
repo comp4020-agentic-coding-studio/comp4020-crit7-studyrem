@@ -10,13 +10,15 @@ import { completeCourse } from "../../../lib/unfold";
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
   const courseId = Number(form.get("courseId"));
-  if (courseId) {
-    const existing = getPlanEntryByCourseId(courseId);
-    const settings = getPlanSettings();
-    const year = existing?.year ?? settings.year;
-    const semester = existing?.semester ?? settings.semester;
-    completeCourse(courseId, year, semester as "S1" | "S2");
-    bus.emit("planChanged");
-  }
+  if (!courseId) return redirect("/?error=invalid-course", 303);
+
+  const existing = getPlanEntryByCourseId(courseId);
+  const settings = getPlanSettings();
+  const year = existing?.year ?? settings.year;
+  const semester = existing?.semester ?? settings.semester;
+  const applied = completeCourse(courseId, year, semester as "S1" | "S2");
+  if (!applied) return redirect("/?error=invalid-course", 303);
+
+  bus.emit("planChanged");
   return redirect("/", 303);
 };

@@ -7,9 +7,9 @@ import { parseSlotValue, setCurrentPosition } from "../../../lib/unfold";
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
   const slot = parseSlotValue(String(form.get("slot") ?? ""));
-  if (slot) {
-    setCurrentPosition(slot.year, slot.semester);
-    bus.emit("planChanged");
-  }
+  if (!slot) return redirect("/?error=invalid-slot", 303);
+
+  setCurrentPosition(slot.year, slot.semester);
+  bus.emit("planChanged");
   return redirect("/", 303);
 };

@@ -9,9 +9,11 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
   const courseId = Number(form.get("courseId"));
   const slot = parseSlotValue(String(form.get("slot") ?? ""));
-  if (courseId && slot) {
-    moveCourse(courseId, slot.year, slot.semester);
-    bus.emit("planChanged");
-  }
+  if (!courseId || !slot) return redirect("/?error=missing-fields", 303);
+
+  const applied = moveCourse(courseId, slot.year, slot.semester);
+  if (!applied) return redirect("/?error=not-offered", 303);
+
+  bus.emit("planChanged");
   return redirect("/", 303);
 };
