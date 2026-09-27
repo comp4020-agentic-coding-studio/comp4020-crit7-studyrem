@@ -27,3 +27,7 @@ what the agent needs to carry from any of it is your call.
 5. Audits go to a clean subagent, not the main thread: when asked for an audit,
    spin up a fresh subagent with no prior context and have it review from a
    client's/audience's position, not an author's.
+6. Don't touch `PROCESS.md` or any `reflections/*.md` file unless I
+   explicitly say so --- these are mine to write. If notes or a draft for
+   either would help, put them in a separate file instead of writing into
+   either of these directly.
