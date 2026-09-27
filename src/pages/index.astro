@@ -197,7 +197,12 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
                           <input type="hidden" name="courseId" value={entry.courseId} />
                           <button>Mark completed</button>
                         </form>
-                        <form method="post" action="/api/plan/remove" class="inline">
+                        <form
+                          method="post"
+                          action="/api/plan/remove"
+                          class="inline"
+                          data-remove-root={entry.source === "pinned" ? "true" : undefined}
+                        >
                           <input type="hidden" name="entryId" value={entry.id} />
                           <button>Remove</button>
                         </form>
@@ -267,6 +272,21 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
 
       courseSelect?.addEventListener("change", filterSlotsForCourse);
       filterSlotsForCourse();
+    </script>
+
+    <script>
+      // Removing a pinned course garbage-collects any auto-placed
+      // prerequisite nothing else needs (see rebuildAutoEntries in
+      // src/lib/unfold.ts) — that's correct, but it's easy to not expect, so
+      // warn before it happens rather than after.
+      for (const form of document.querySelectorAll('form[data-remove-root="true"]')) {
+        form.addEventListener("submit", (event) => {
+          const proceed = confirm(
+            "Removing this may also remove any auto-placed prerequisites nothing else in your plan still needs. Continue?",
+          );
+          if (!proceed) event.preventDefault();
+        });
+      }
     </script>
   </body>
 </html>
