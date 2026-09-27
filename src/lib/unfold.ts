@@ -7,6 +7,7 @@ import {
   getPlanEntryByCourseId,
   getPlanEntryById,
   getPlanSettings,
+  listCourses,
   listPlanEntries,
   type PlanEntryWithCourse,
   setPlanSettings,
@@ -218,6 +219,66 @@ export function removeCourse(entryId: number): boolean {
  * pinned one elsewhere). Same operation either way: it becomes a root. */
 export function moveCourse(courseId: number, year: number, semester: Semester): boolean {
   return placeCourse(courseId, year, semester);
+}
+
+/** Every course that appears alongside `courseId` in some OR-group, across
+ * every course's requirement — i.e. what could stand in for it. Two OR-
+ * options are usually mutually incompatible in reality (e.g. COMP1100 vs
+ * COMP1130), so this is what "Alter" is allowed to switch an auto-placed
+ * entry to. */
+export function alternativesFor(courseId: number): Course[] {
+  const found = new Map<number, Course>();
+  for (const course of listCourses()) {
+    for (const group of getCourseRequirement(course.id).groups) {
+      if (!group.some((option) => option.id === courseId)) continue;
+      for (const option of group) {
+        if (option.id !== courseId) found.set(option.id, option);
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+/** Switch an auto-placed prerequisite for one of its OR-alternatives. Pins
+ * the alternative (so it survives the next rebuild as a root, instead of
+ * being regenerated back to the original choice) — this is exactly the
+ * "pin the alternative yourself" workaround ensurePrereqs' alreadyPlanned
+ * check already respects, just reachable without knowing the trick. Keeps
+ * the original slot when the alternative is offered there, otherwise finds
+ * the nearest earlier slot the same way auto-placement would have. */
+export function alterPrerequisite(fromCourseId: number, toCourseId: number): boolean {
+  const fromEntry = getPlanEntryByCourseId(fromCourseId);
+  if (!fromEntry || fromEntry.source !== "auto") return false;
+  if (getPlanEntryByCourseId(toCourseId)) return false;
+
+  const toCourse = getCourseById(toCourseId);
+  if (!toCourse) return false;
+  if (!alternativesFor(fromCourseId).some((c) => c.id === toCourseId)) return false;
+
+  const settings = getPlanSettings();
+  const floorSlot = slotIndex(settings.year, settings.semester as Semester);
+  const fromSlot = slotIndex(fromEntry.year, fromEntry.semester as Semester);
+  const entries = listPlanEntries();
+
+  let year: number;
+  let semester: Semester;
+  if (offeredIn(toCourse, fromEntry.semester as Semester)) {
+    year = fromEntry.year;
+    semester = fromEntry.semester as Semester;
+  } else {
+    const nearest = nearestSlotBefore(toCourse, entries, fromSlot + 1, floorSlot);
+    ({ year, semester } = semesterAt(nearest ?? floorSlot));
+  }
+
+  upsertPlanEntry({
+    courseId: toCourseId,
+    year,
+    semester,
+    position: leftmostFreeSlot(entries, year, semester, toCourseId),
+    source: "pinned",
+  });
+  rebuildAutoEntries();
+  return true;
 }
 
 export function completeCourse(courseId: number, year: number, semester: Semester): boolean {

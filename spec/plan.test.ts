@@ -90,6 +90,64 @@ describe("plan", () => {
     expect(isPlanned(after, "COMP1100")).toBe(true);
   });
 
+  it("alters an auto-placed prerequisite to its OR-alternative", async () => {
+    // COMP2100 -> (COMP1110 or COMP1140). COMP1100 is pinned at 1-S1
+    // (earlier test), which already satisfies COMP1110's own prerequisite,
+    // so adding COMP2100 at 2-S1 only auto-places COMP1110 — that's the
+    // entry Alter should offer COMP1140 as an alternative for.
+    const comp2100Id = await courseIdFor("COMP2100");
+    await post("/api/plan/add", new URLSearchParams({ courseId: comp2100Id, slot: "2-S1" }));
+
+    let html = await (await fetch(baseUrl)).text();
+    expect(html).toMatch(/COMP1110[\s\S]{0,200}?auto/);
+    const fromCourseId = new RegExp('name="fromCourseId" value="(\\d+)"').exec(html)?.[1];
+    if (!fromCourseId) throw new Error("no Alter control found for the auto-placed COMP1110");
+    const comp1140Id = await courseIdFor("COMP1140");
+
+    const res = await post(
+      "/api/plan/alter",
+      new URLSearchParams({ fromCourseId, toCourseId: comp1140Id }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+
+    html = await (await fetch(baseUrl)).text();
+    expect(html).toMatch(/COMP1140[\s\S]{0,200}?pinned/);
+    expect(isPlanned(html, "COMP1110")).toBe(false);
+
+    // Cleanup so later tests see the branch empty again — COMP1140 is now a
+    // pinned root of its own, so it needs removing separately from COMP2100.
+    const comp2100EntryId = await entryIdFor(html, "COMP2100");
+    await post("/api/plan/remove", new URLSearchParams({ entryId: comp2100EntryId }));
+    html = await (await fetch(baseUrl)).text();
+    const comp1140EntryId = await entryIdFor(html, "COMP1140");
+    await post("/api/plan/remove", new URLSearchParams({ entryId: comp1140EntryId }));
+  });
+
+  it("rejects altering to a course that isn't actually an alternative", async () => {
+    const comp2100Id = await courseIdFor("COMP2100");
+    await post("/api/plan/add", new URLSearchParams({ courseId: comp2100Id, slot: "2-S1" }));
+
+    let html = await (await fetch(baseUrl)).text();
+    const fromCourseId = new RegExp('name="fromCourseId" value="(\\d+)"').exec(html)?.[1];
+    if (!fromCourseId) throw new Error("no Alter control found for the auto-placed COMP1110");
+    const comp3600Id = await courseIdFor("COMP3600");
+
+    const res = await post(
+      "/api/plan/alter",
+      new URLSearchParams({ fromCourseId, toCourseId: comp3600Id }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/?error=alter-failed");
+
+    // COMP1110 is still the auto-placed choice; nothing changed.
+    html = await (await fetch(baseUrl)).text();
+    expect(html).toMatch(/COMP1110[\s\S]{0,200}?auto/);
+
+    const entryId = await entryIdFor(html, "COMP2100");
+    await post("/api/plan/remove", new URLSearchParams({ entryId }));
+  });
+
   it("broadcasts a plan mutation over the SSE stream", async () => {
     const comp3600Id = await courseIdFor("COMP3600");
 

@@ -1,6 +1,7 @@
 ---
 import { getPlanSettings, listCourses, listPlanEntries, type PlanEntryWithCourse } from "../lib/db";
 import {
+  alternativesFor,
   offeredIn,
   orderingConflicts,
   overflowEntries,
@@ -24,6 +25,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   "invalid-entry": "Couldn't find that plan entry to remove — it may already be gone.",
   "invalid-course": "That course couldn't be found.",
   "invalid-slot": "That's not a valid year/semester.",
+  "alter-failed":
+    "Couldn't switch to that alternative — it may not actually be one here, or is already planned elsewhere.",
 };
 const errorCode = Astro.url.searchParams.get("error");
 const errorMessage = errorCode ? (ERROR_MESSAGES[errorCode] ?? "That action didn't go through.") : null;
@@ -87,7 +90,9 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
         Add a course and its unmet prerequisites automatically back-fill into
         the nearest earlier semester they're offered in. Auto-placed courses
         can be pinned or moved; nothing you've placed yourself is ever moved
-        for you.
+        for you. When a prerequisite has more than one option (e.g. COMP1100
+        or COMP1130), auto-fill picks one — use Alter to switch it for the
+        other.
       </p>
 
       <form method="post" action="/api/plan/position" class="position-form">
@@ -178,6 +183,20 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
                             <input type="hidden" name="courseId" value={entry.courseId} />
                             <input type="hidden" name="slot" value={`${year}-${semester}`} />
                             <button>Pin here</button>
+                          </form>
+                        )}
+                        {entry.source === "auto" && alternativesFor(entry.courseId).length > 0 && (
+                          <form method="post" action="/api/plan/alter" class="inline">
+                            <input type="hidden" name="fromCourseId" value={entry.courseId} />
+                            <select
+                              name="toCourseId"
+                              aria-label={`Choose an alternative for ${entry.course.code}`}
+                            >
+                              {alternativesFor(entry.courseId).map((alt) => (
+                                <option value={alt.id}>{alt.code}</option>
+                              ))}
+                            </select>
+                            <button>Alter</button>
                           </form>
                         )}
                         <form method="post" action="/api/plan/move" class="inline">
