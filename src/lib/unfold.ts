@@ -4,6 +4,8 @@ import {
   deletePlanEntry,
   getCourseById,
   getCourseRequirement,
+  getPlanEntryByCourseId,
+  getPlanEntryById,
   getPlanSettings,
   listPlanEntries,
   type PlanEntryWithCourse,
@@ -183,9 +185,15 @@ export function rebuildAutoEntries(): void {
   }
 }
 
-export function placeCourse(courseId: number, year: number, semester: Semester): void {
+/** Places or re-pins a course, refusing a course/semester it isn't offered in
+ * and a course already marked completed — the add-course dropdown already
+ * hides completed courses for this reason, this just makes the server
+ * enforce the same rule against a request that bypasses it. Returns whether
+ * the placement actually happened. */
+export function placeCourse(courseId: number, year: number, semester: Semester): boolean {
   const course = getCourseById(courseId);
-  if (!course || !offeredIn(course, semester)) return;
+  if (!course || !offeredIn(course, semester)) return false;
+  if (getPlanEntryByCourseId(courseId)?.source === "completed") return false;
 
   const entries = listPlanEntries();
   upsertPlanEntry({
@@ -196,26 +204,30 @@ export function placeCourse(courseId: number, year: number, semester: Semester):
     source: "pinned",
   });
   rebuildAutoEntries();
+  return true;
 }
 
-export function removeCourse(entryId: number): void {
+export function removeCourse(entryId: number): boolean {
+  if (!getPlanEntryById(entryId)) return false;
   deletePlanEntry(entryId);
   rebuildAutoEntries();
+  return true;
 }
 
 /** Pin an auto-placed course to a slot of the user's choosing (or re-pin a
  * pinned one elsewhere). Same operation either way: it becomes a root. */
-export function moveCourse(courseId: number, year: number, semester: Semester): void {
-  placeCourse(courseId, year, semester);
+export function moveCourse(courseId: number, year: number, semester: Semester): boolean {
+  return placeCourse(courseId, year, semester);
 }
 
-export function completeCourse(courseId: number, year: number, semester: Semester): void {
-  if (!getCourseById(courseId)) return;
+export function completeCourse(courseId: number, year: number, semester: Semester): boolean {
+  if (!getCourseById(courseId)) return false;
 
   // Position is meaningless here — completed entries never render in the
   // slot grid — but the column is NOT NULL, so pick something harmless.
   upsertPlanEntry({ courseId, year, semester, position: 0, source: "completed" });
   rebuildAutoEntries();
+  return true;
 }
 
 export function setCurrentPosition(year: number, semester: Semester): void {
