@@ -17,7 +17,7 @@ const post = (path: string, body: URLSearchParams) =>
 
 async function courseIdFor(code: string): Promise<string> {
   const html = await (await fetch(baseUrl)).text();
-  const match = new RegExp(`value="(\\d+)">${code} `).exec(html);
+  const match = new RegExp(`value="(\\d+)"[^>]*>${code} `).exec(html);
   if (!match) throw new Error(`${code} not found in the add-course picker`);
   return match[1];
 }

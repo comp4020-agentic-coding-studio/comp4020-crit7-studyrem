@@ -128,13 +128,13 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
           <option value="">Choose a course…</option>
           {
             unplannedCourses.map((c) => (
-              <option value={c.id}>
+              <option value={c.id} data-semesters={c.semesters}>
                 {c.code} — {c.title}
               </option>
             ))
           }
         </select>
-        <select name="slot" aria-label="Target semester">
+        <select name="slot" id="addSlot" aria-label="Target semester">
           {slotOptions.map((opt) => <option value={opt.value}>{opt.label}</option>)}
         </select>
         <button>Add</button>
@@ -215,6 +215,35 @@ const timeline = PLANNING_YEARS.flatMap((year) =>
       // the form's own 303 redirect.
       const source = new EventSource("/api/events");
       source.addEventListener("message", () => location.reload());
+    </script>
+
+    <script>
+      // Progressive enhancement only: the server (placeCourse) already
+      // rejects a course/semester combo it isn't offered in, this just
+      // keeps the picker from offering one in the first place.
+      const courseSelect = document.getElementById("courseId") as HTMLSelectElement | null;
+      const slotSelect = document.getElementById("addSlot") as HTMLSelectElement | null;
+
+      function filterSlotsForCourse() {
+        if (!courseSelect || !slotSelect) return;
+        const semesters = courseSelect.selectedOptions[0]?.dataset.semesters?.split(",") ?? [
+          "S1",
+          "S2",
+        ];
+        let firstVisible: HTMLOptionElement | undefined;
+        for (const option of slotSelect.options) {
+          const semester = option.value.split("-")[1];
+          const visible = semesters.includes(semester);
+          option.hidden = !visible;
+          if (visible && !firstVisible) firstVisible = option;
+        }
+        if (slotSelect.selectedOptions[0]?.hidden && firstVisible) {
+          slotSelect.value = firstVisible.value;
+        }
+      }
+
+      courseSelect?.addEventListener("change", filterSlotsForCourse);
+      filterSlotsForCourse();
     </script>
   </body>
 </html>
